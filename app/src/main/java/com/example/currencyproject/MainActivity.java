@@ -1,6 +1,11 @@
 package com.example.currencyproject;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -25,13 +30,20 @@ import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private Spinner spinnerFrom, spinnerTo;
     private EditText inputAmount;
     private TextView resultText;
     private Button convertButton;
     private List<ExchangeRate> exchangeRates = new ArrayList<>();
+
+    // Pola dla akcelerometru
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
+    private float lastX, lastY, lastZ;
+    private long lastUpdate;
+    private static final int SHAKE_THRESHOLD = 600;
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -46,6 +58,12 @@ public class MainActivity extends AppCompatActivity {
         resultText = findViewById(R.id.resultText);
         convertButton = findViewById(R.id.convertButton);
 
+        // Inicjalizacja SensorManager i akcelerometru
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        }
+
         // Pobranie kursów walut
         fetchExchangeRates();
 
@@ -56,6 +74,59 @@ public class MainActivity extends AppCompatActivity {
                 calculateConversion();
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Rejestracja nasłuchiwacza akcelerometru
+        if (accelerometer != null) {
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Wyrejestrowanie nasłuchiwacza akcelerometru
+        sensorManager.unregisterListener(this);
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            float x = event.values[0];
+            float y = event.values[1];
+            float z = event.values[2];
+
+            long currentTime = System.currentTimeMillis();
+            if ((currentTime - lastUpdate) > 100) {
+                long diffTime = currentTime - lastUpdate;
+                lastUpdate = currentTime;
+
+                float speed = Math.abs(x + y + z - lastX - lastY - lastZ) / diffTime * 10000;
+
+                if (speed > SHAKE_THRESHOLD) {
+                    // Resetowanie wpisanych danych
+                    resetInputs();
+                }
+
+                lastX = x;
+                lastY = y;
+                lastZ = z;
+            }
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+        // Nie wymaga implementacji
+    }
+
+    private void resetInputs() {
+        inputAmount.setText(""); // Resetowanie pola z kwotą
+        resultText.setText(""); // Resetowanie wyniku
+        Toast.makeText(this, "Kwota i wynik zostały zresetowane!", Toast.LENGTH_SHORT).show();
     }
 
     private void fetchExchangeRates() {
